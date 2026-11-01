@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/Zolet-hash/account-management-api/internal/domain"
@@ -338,4 +339,60 @@ func (r *Repository) Balances(ctx context.Context, id uuid.UUID) (model.UserBala
 	}
 	balances.TotalBalance = float64(totalCents) / 100
 	return balances, rows.Err()
+}
+
+// Volumes retrieves daily transaction volumes grouped by exchange
+// within the specified date range. It includes days with no transactions
+// and returns each exchange's total volume for each day.
+func (r *Repository) Volumes(ctx context.Context, start, end time.Time) ([]model.DailyVolume, error) {
+
+	days := int(end.Sub(start).Hours()/24) + 1
+	out := make([]model.DailyVolume, days)
+
+	for i := range out {
+		out[i] = model.DailyVolume{
+			Date:            start.AddDate(0, 0, i).Format("2006-01-02"),
+			ExchangeVolumes: []model.ExchangeVolume{}}
+	}
+
+	rows, err := r.DB.Query(ctx, `SELECT (trans.created_at AT TIME ZONE 'UTC')::date::text,
+	 		exchage.id, exchange.name, sum(trans.amount)::text FROM transactions trans 
+	 		JOIN accounts account ON account.id=trans.account_id JOIN exchanges exchange
+			ON exchange.id=account.exchange_id WHERE trans.created_at >= ($1::date::timestamp AT TIME ZONE 'UTC') 
+			AND trans.created_at < (($2::date+interval '1 day')::timestamp AT TIME ZONE 'UTC') 
+			GROUP BY 1,2,3 ORDER BY 1,3`, start.UTC().Format("2006-01-02"), end.UTC().Format("2006-01-02"))
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+
+		var date string
+		var exchangeVol model.ExchangeVolume
+		var amount string
+
+		if err = rows.Scan(&date, &exchangeVol.ExchangeID, &exchangeVol.ExchangeName, &amount); err != nil {
+			return nil, err
+		}
+
+		centAmount, err := tocent(amount)
+		if err != nil {
+			return nil, err
+		}
+		exchangeVol.Volume = float64(centAmount) / 100
+
+		format := int(mustDate(date).Sub(start).Hours() / 24)
+		if format >= 0 && format < len(out) {
+			out[format].ExchangeVolumes = append(out[format].ExchangeVolumes, exchangeVol)
+		}
+	}
+	return out, rows.Err()
+}
+
+// mustDate converts a date string into a time.Time value using the YYYY-MM-DD format.
+func mustDate(s string) time.Time {
+	t, _ := time.Parse("2006-01-02", strings.TrimSpace(s))
+	return t
 }
