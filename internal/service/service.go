@@ -10,7 +10,30 @@ import (
 	"github.com/google/uuid"
 )
 
+type Store interface {
+	CreateUser(context.Context, model.User) (model.User, error)
+	User(context.Context, uuid.UUID) (model.User, error)
+	Exchange(context.Context, uuid.UUID) (model.Exchange, error)
+	CreateAccount(context.Context, model.Account) (model.Account, error)
+	Account(context.Context, uuid.UUID) (model.Account, model.Exchange, error)
+	Transfer(context.Context, uuid.UUID, string, int64, string) (model.Transaction, error)
+	Balances(context.Context, uuid.UUID) (model.UserBalances, error)
+	Volumes(context.Context, time.Time, time.Time) ([]model.DailyVolume, error)
+}
+
 // and have the interface methods return those for specific error scenarios.
+
+type Service struct {
+	store Store
+	now   func() time.Time
+}
+
+func New(s Store) *Service {
+	return &Service{
+		store: s,
+		now:   time.Now,
+	}
+}
 
 // --- Users Service Interface (Maps to 'Users' tag) ---
 
@@ -32,56 +55,15 @@ type UserService interface {
 }
 
 // handles database operations
-type UserStore interface {
-	CreateUser(
-		ctx context.Context,
-		user model.CreateUserRequest,
-	) (model.CreateUserResponse, error)
-
-	GetUserBalances(
-		ctx context.Context,
-		userID uuid.UUID,
-	) (model.GetUserBalancesResponse, error)
-}
-
-// Define service struct
-type userService struct {
-	store UserStore
-	now   func() time.Time
-}
-
-// create constructor
-func NewUserService(store UserStore) UserService {
-	return &userService{
-		store: store,
-		now:   time.Now,
-	}
-}
 
 // create user
-func (s *userService) CreateUser(
-	ctx context.Context,
-	req model.CreateUserRequest,
-) (*model.CreateUserResponse, error) {
-	if req.Username == "" || req.DocumentNumber == "" || req.DateOfBirth.IsZero() ||
-		req.DateOfBirth.After(s.now()) {
+func (s *Service) CreateUser(ctx context.Context, username string, dob time.Time, document string) (*model.CreateUserResponse, error) {
+	if username == "" || document == "" || dob.IsZero() ||
+		dob.After(s.now()) {
 		return nil, domain.ErrInvalidRequest
 	}
 
-	user := model.CreateUserRequest{
-		Username:       req.Username,
-		DateOfBirth:    req.DateOfBirth,
-		DocumentNumber: req.DocumentNumber,
-	}
-
-	createdUser, err := s.store.CreateUser(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-
-	return &model.CreateUserResponse{
-		UserID: createdUser.UserID,
-	}, nil
+	return s.store.CreateUser(ctx, model.CreateUserRequest{Username: username, DateOfBirth: dob, DocumentNumber: document})
 
 }
 
@@ -112,7 +94,40 @@ func (s *userService) GetUserBalances(
 // AccountService defines the methods for creating accounts.
 type AccountService interface {
 	// CreateAccount handles POST /accounts
-	CreateAccount(ctx context.Context, req model.CreateAccountRequest) (*model.CreateAccountResponse, error)
+	CreateAccount(
+		ctx context.Context,
+		req model.CreateAccountRequest,
+	) (*model.CreateAccountResponse, error) // returns acc id
+}
+
+type AccountStore interface {
+	CreateAccount(
+		ctx context.Context,
+		account model.CreateAccountRequest,
+	) (*model.CreateAccountResponse, error) // returns account ID
+}
+
+type accountService struct {
+	store AccountStore
+	now   func() time.Time
+}
+
+func NewAccountService(store AccountStore) AccountService {
+	return &accountService{
+		store: store,
+		now:   time.Now,
+	}
+}
+
+// create account
+func (s *accountService) CreateAccount(
+	ctx context.Context,
+	req model.CreateAccountRequest,
+) (*model.CreateAccountResponse, error) { // returns acc id
+
+	//retrieve the user
+	user, err := s.store.userID(ctx, userID)
+
 }
 
 // --- Transactions Service Interface (Maps to 'Transactions' tag) ---
