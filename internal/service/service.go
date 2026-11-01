@@ -127,3 +127,23 @@ type TransactionService interface {
 	// GetDailyTransactionVolume handles GET /transactions/volume
 	GetDailyTransactionVolume(ctx context.Context, startDate time.Time, endDate time.Time) (*model.GetTransactionVolumeResponse, error)
 }
+
+// calculateAge calculates a person's age in complete years based on their DOB
+// also handles pple born on feb 29
+func calculateAge(dob, current time.Time) int {
+	age := current.Year() - dob.Year()
+
+	// if current date is nov 1st 2026 and DOB is June 21 2000 -> bithday var will hold June 21 2026
+	birthDay := time.Date(current.Year(), dob.Month(), dob.Day(), 0, 0, 0, 0, time.UTC)
+
+	// handle pple born on leap yr
+	if dob.Month() == time.February && dob.Day() == 29 && birthDay.Equal(time.Date(current.Year(),
+		time.March, 1, 0, 0, 0, 0, time.UTC)) {
+		birthDay = time.Date(current.Year(), time.February, 28, 0, 0, 0, 0, time.UTC)
+	}
+
+	if current.Before(birthDay) {
+		age--
+	}
+	return age
+}
