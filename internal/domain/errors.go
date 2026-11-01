@@ -9,5 +9,6 @@ var (
 	ErrInsufficientBalance   = errors.New("insufficient balance")
 	ErrTransferLimitExceeded = errors.New("transfer limit exceeded")
 	ErrInvalidRequest        = errors.New("invalid request")
-	ErrIdemptotencyConflict  = errors.New("idemptotency key conflict")
+	ErrIdempotencyConflict  = errors.New("idemptotency key conflict")
+	ErrMinimumAgeNotMet      = errors.New("minimum age not met")
 )
