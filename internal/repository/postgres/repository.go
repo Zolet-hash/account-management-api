@@ -119,3 +119,60 @@ func (r *Repository) User(ctx context.Context, id uuid.UUID) (model.User, error)
 	return user, mapErr(err)
 }
 
+func (r *Repository) Exchange(ctx context.Context, id uuid.UUID) (model.Exchange, error) {
+
+	var exchange model.Exchange
+	var amount string
+
+	err := r.DB.QueryRow(ctx, `SELECT id, name,minimum_age,
+		maximum_transfer_amount::text FROM exchanges WHERE id=$1`, id,
+	).Scan(&exchange.ID, &exchange.Name, &exchange.MinimumAge, &amount)
+
+	if err != nil {
+		return exchange, mapErr(err)
+	}
+
+	exchange.MaximumTransferCents, err = tocent(amount)
+	exchange.MaximumTransferAmount = float64(exchange.MaximumTransferCents) / 100
+	return exchange, err
+}
+
+// CreateAccount inserts accountdata into the database
+func (r *Repository) CreateAccount(ctx context.Context, account model.Account) (model.Account, error) {
+	err := r.DB.QueryRow(ctx, `INSERT INTO accounts(id, user_id,exchange_id) 
+	VALUES($1,$2,$3) 
+	RETURNING created_at`, account.ID, account.UserID, account.ExchangeID).Scan(&account.CreatedAt)
+	return account, mapErr(err)
+}
+
+func (r *Repository) Account(ctx context.Context, id uuid.UUID) (model.Account, model.Exchange, error) {
+
+	var account model.Account
+	var exchange model.Exchange
+	var amount, limit string
+
+	err := r.DB.QueryRow(ctx, `SELECT account.id, account.user_id, account.exchange_id, 
+	account.balance::text, account.created_at, exchange.name, exchange.minimum_age, 
+	exchange.maximum_transfer_amount::text FROM accounts account JOIN exchanges exchange ON exchange.id=account.exchange_id WHERE account.id=$1`, id,
+	).Scan(&account.ID, &account.UserID, &account.ExchangeID, &amount, &account.CreatedAt, &exchange.Name, &exchange.MinimumAge, &limit)
+	
+	if err != nil {
+		return account, exchange, mapErr(err)
+	}
+
+	account.BalanceCents, err = tocent(amount)
+	if err != nil {
+		return account, exchange, err
+	}
+
+	account.Balance = float64(account.BalanceCents) / 100
+	exchange.ID = account.ExchangeID
+
+	exchange.MaximumTransferCents, err = tocent(limit)
+
+	if err != nil {
+		return account, exchange, err
+	}
+	exchange.MaximumTransferAmount = float64(exchange.MaximumTransferCents) / 100
+	return account, exchange, err
+}
