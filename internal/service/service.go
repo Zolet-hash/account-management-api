@@ -7,7 +7,6 @@ import (
 	"github.com/Zolet-hash/account-management-api/internal/model"
 )
 
-// Error handling: Typically, you'd define custom errors (e.g., ErrNotFound, ErrConflict, ErrInvalidAmount)
 // and have the interface methods return those for specific error scenarios.
 
 // --- Users Service Interface (Maps to 'Users' tag) ---
