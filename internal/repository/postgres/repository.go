@@ -1,11 +1,15 @@
 package postgres
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 
+	"github.com/Zolet-hash/account-management-api/internal/domain"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -72,3 +76,24 @@ func tocent(value string) (int64, error) {
 
 	return result, nil
 }
+
+// mapErr maps postgres errors
+func mapErr(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrNotFound
+	}
+	var pgerr *pgconn.PgError
+	if errors.As(err, &pgerr) {
+		if pgerr.Code == "23505" {
+			return fmt.Errorf("%w: %s", domain.ErrConflict, pgerr.ConstraintName)
+		}
+		if pgerr.Code == "23503" {
+			return domain.ErrNotFound
+		}
+		if pgerr.Code == "23514" {
+			return domain.ErrInvalidRequest
+		}
+	}
+	return err
+}
+
