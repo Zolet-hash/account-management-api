@@ -8,7 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"uuid"
+
+	"github.com/google/uuid"
 
 	"github.com/Zolet-hash/account-management-api/internal/domain"
 	"github.com/Zolet-hash/account-management-api/internal/model"
