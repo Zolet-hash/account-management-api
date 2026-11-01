@@ -1,0 +1,74 @@
+package postgres
+
+import (
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	DB *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{DB: db}
+}
+
+func money(cent int64) string {
+	if cent < 0 {
+		amount := abs(cent)
+		return fmt.Sprintf("-%d.%02d", amount/100, amount%100)
+	}
+	return fmt.Sprintf("%d.%02d", cent/100, cent%100)
+}
+
+// abs calculates absolute value of an int
+func abs(value int64) int64 {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+// converts amountfrom string to cent
+func tocent(value string) (int64, error) {
+
+	// cleanup the string
+	value = strings.TrimSpace(value) // remove unecessary spaces
+	negative := strings.HasPrefix(value, "-")
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "-"), "+")
+
+	parts := strings.Split(value, ".")
+	if len(parts) > 2 || parts[0] == "" {
+		return 0, fmt.Errorf("invalid numeric amount")
+	}
+
+	whole, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid numeric amount: %w", err)
+	}
+
+	fraction := "00"
+	if len(parts) == 2 {
+		if len(parts[1]) > 2 {
+			return 0, fmt.Errorf("numeric amount has more than two decimal places")
+		}
+		fraction = parts[1] + strings.Repeat("0", 2-len(parts[1]))
+	}
+	// convert fraction into integer
+	minor, err := strconv.ParseInt(fraction, 10, 64)
+	// check for int overflow
+	if err != nil || whole > (math.MaxInt64-minor)/100 {
+		return 0, fmt.Errorf("numeric amount overflows cents")
+	}
+
+	result := whole*100 + minor
+	if negative {
+		result = -result
+	}
+
+	return result, nil
+}
