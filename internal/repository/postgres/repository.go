@@ -155,7 +155,7 @@ func (r *Repository) Account(ctx context.Context, id uuid.UUID) (model.Account, 
 	account.balance::text, account.created_at, exchange.name, exchange.minimum_age, 
 	exchange.maximum_transfer_amount::text FROM accounts account JOIN exchanges exchange ON exchange.id=account.exchange_id WHERE account.id=$1`, id,
 	).Scan(&account.ID, &account.UserID, &account.ExchangeID, &amount, &account.CreatedAt, &exchange.Name, &exchange.MinimumAge, &limit)
-	
+
 	if err != nil {
 		return account, exchange, mapErr(err)
 	}
@@ -175,4 +175,128 @@ func (r *Repository) Account(ctx context.Context, id uuid.UUID) (model.Account, 
 	}
 	exchange.MaximumTransferAmount = float64(exchange.MaximumTransferCents) / 100
 	return account, exchange, err
+}
+
+func (r *Repository) Transfer(ctx context.Context, id uuid.UUID, typ string, amount int64, key string) (model.Transaction, error) {
+
+	tx, err := r.DB.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return model.Transaction{}, err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+
+	var existing model.Transaction
+	var oldAmount string
+
+	err = tx.QueryRow(ctx, `SELECT id, account_id, type,amount::text, created_at FROM transactions 
+	WHERE account_id=$1 AND idempotency_key=$2`, id, key,
+	).Scan(&existing.ID, &existing.AccountID, &existing.Type, &oldAmount, &existing.CreatedAt)
+
+	if err == nil {
+		old, err := tocent(oldAmount)
+		if err != nil {
+			return existing, err
+		}
+
+		if existing.Type != typ || old != amount {
+			return existing, domain.ErrIdempotencyConflict
+		}
+
+		existing.AmountCents = old
+		existing.Amount = float64(old) / 100
+		return existing, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return existing, err
+	}
+
+	var balanceText, limitText string
+	err = tx.QueryRow(ctx, `SELECT account.balance::text, exchange.maximum_transfer_amount::text 
+	FROM accounts account JOIN exchanges exchange ON exhange.id=account.exchange_id WHERE account.id=$1 FOR UPDATE OF account`, id,
+	).Scan(&balanceText, &limitText)
+
+	if err != nil {
+		return existing, mapErr(err)
+	}
+	// A competing request may have committed the same key while we waited for the row lock.
+	err = tx.QueryRow(ctx, `SELECT id, account_id, type,amount::text,created_at FROM transactions
+		 WHERE account_id=$1 AND idempotency_key=$2`, id, key,
+	).Scan(&existing.ID, &existing.AccountID, &existing.Type, &oldAmount, &existing.CreatedAt)
+
+	if err == nil {
+		old, parseErr := tocent(oldAmount)
+		if parseErr != nil {
+			return existing, parseErr
+		}
+
+		if existing.Type != typ || old != amount {
+			return existing, domain.ErrIdempotencyConflict
+		}
+
+		if err = tx.Commit(ctx); err != nil {
+			return existing, err
+		}
+
+		existing.AmountCents = old
+		existing.Amount = float64(old) / 100
+		return existing, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return existing, err
+	}
+	bal, err := tocent(balanceText)
+
+	if err != nil {
+		return existing, err
+	}
+	limit, err := tocent(limitText)
+
+	if err != nil {
+		return existing, err
+	}
+
+	if amount <= 0 {
+		return existing, domain.ErrInvalidAmount
+	}
+
+	if amount > limit {
+		return existing, domain.ErrTransferLimitExceeded
+	}
+	delta := amount
+
+	if typ == "withdrawal" {
+		delta = -amount
+		if amount > bal {
+			return existing, domain.ErrInsufficientBalance
+		}
+	}
+
+	_, err = tx.Exec(ctx, `UPDATE accounts SET balance=balance+$2::numeric,updated_at=now() WHERE id=$1`, id, money(delta))
+	if err != nil {
+		return existing, err
+	}
+
+	existing = model.Transaction{
+		ID:          uuid.New(),
+		AccountID:   id,
+		Type:        typ,
+		AmountCents: amount,
+		Amount:      float64(amount) / 100,
+	}
+
+	err = tx.QueryRow(ctx, `INSERT INTO transactions(id, account_id, type, amount, idempotency_key) 
+			VALUES($1,$2,$3,$4::numeric,$5) 
+			RETURNING created_at`, existing.ID, id, typ, money(amount), key,
+	).Scan(&existing.CreatedAt)
+
+	if err != nil {
+		return existing, mapErr(err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return existing, err
+	}
+	return existing, nil
 }
