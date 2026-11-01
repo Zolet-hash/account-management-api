@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/Zolet-hash/account-management-api/internal/domain"
@@ -146,4 +147,22 @@ func calculateAge(dob, current time.Time) int {
 		age--
 	}
 	return age
+}
+
+// amountToCents converts the amount from float64 to integer cents(int64)
+func amountToCents(amount float64) (int64, error) {
+	if math.IsNaN(amount) || math.IsInf(amount, 0) || amount <= 0 || amount > 9e15 {
+		return 0, domain.ErrInvalidAmount
+	}
+
+	// convert amount to cents
+	cent := amount * 100
+
+	// check if the amount can be represented as a whole number of cents
+	if math.Abs(cent-math.Round(cent)) > 0.000001 {
+		return 0, domain.ErrInvalidAmount
+	}
+
+	//round to the nearest integer then return the value
+	return int64(math.Round(cent)), nil
 }
