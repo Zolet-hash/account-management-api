@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/Zolet-hash/account-management-api/internal/domain"
@@ -10,6 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// group interface togath
 type Store interface {
 	CreateUser(context.Context, model.User) (model.User, error)
 	User(context.Context, uuid.UUID) (model.User, error)
@@ -21,7 +24,75 @@ type Store interface {
 	Volumes(context.Context, time.Time, time.Time) ([]model.DailyVolume, error)
 }
 
+type Service struct {
+	store Store
+	now   func() time.Time
+}
 
+func New(s Store) *Service {
+
+	return &Service{store: s, now: time.Now}
+}
+
+func (s *Service) CreateUser(ctx context.Context, username string, dob time.Time, document string) (model.User, error) {
+	if username == "" || document == "" || dob.IsZero() || dob.After(s.now()) {
+		return model.User{}, domain.ErrInvalidRequest
+	}
+	return s.store.CreateUser(ctx, model.User{ID: uuid.New(), Username: username, DateOfBirth: dob, DocumentNumber: document})
+}
+
+// create exchanges account
+func (s *Service) CreateAccount(ctx context.Context, userID, exchangeID uuid.UUID) (model.Account, error) {
+	user, err := s.store.User(ctx, userID)
+	if err != nil {
+		return model.Account{}, err
+	}
+	exchange, err := s.store.Exchange(ctx, exchangeID)
+	if err != nil {
+		return model.Account{}, err
+	}
+	if calculateAge(user.DateOfBirth, s.now().UTC()) < exchange.MinimumAge {
+		return model.Account{}, domain.ErrMinimumAgeNotMet
+	}
+	return s.store.CreateAccount(ctx, model.Account{ID: uuid.New(), UserID: userID, ExchangeID: exchangeID})
+}
+
+func (s *Service) Transfer(ctx context.Context, id uuid.UUID, typ string, amount float64, key string) (model.Transaction, error) {
+	if typ != "deposit" && typ != "withdrawal" {
+		return model.Transaction{}, domain.ErrInvalidRequest
+	}
+	if strings.TrimSpace(key) == "" || len(key) > 128 {
+		return model.Transaction{}, domain.ErrInvalidRequest
+	}
+	cent, err := amountToCents(amount)
+	if err != nil {
+		return model.Transaction{}, err
+	}
+	_, exchange, err := s.store.Account(ctx, id)
+	if err != nil {
+		return model.Transaction{}, err
+	}
+	if cent > exchange.MaximumTransferCents {
+		return model.Transaction{}, domain.ErrTransferLimitExceeded
+	}
+	return s.store.Transfer(ctx, id, typ, cent, key)
+}
+
+func (s *Service) Balances(ctx context.Context, id uuid.UUID) (model.UserBalances, error) {
+	if _, err := s.store.User(ctx, id); err != nil {
+		return model.UserBalances{}, err
+	}
+	return s.store.Balances(ctx, id)
+}
+
+func (s *Service) Volumes(ctx context.Context, start, end time.Time) ([]model.DailyVolume, error) {
+	start = start.UTC()
+	end = end.UTC()
+	if start.After(end) || end.Sub(start) > 90*24*time.Hour {
+		return nil, fmt.Errorf("%w: range must be 0-90 days", domain.ErrInvalidRequest)
+	}
+	return s.store.Volumes(ctx, start, end)
+}
 
 // calculateAge calculates a person's age in complete years based on their DOB
 // also handles pple born on feb 29
