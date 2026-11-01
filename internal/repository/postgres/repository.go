@@ -177,6 +177,7 @@ func (r *Repository) Account(ctx context.Context, id uuid.UUID) (model.Account, 
 	return account, exchange, err
 }
 
+// safe transaction transfers with idempotency support
 func (r *Repository) Transfer(ctx context.Context, id uuid.UUID, typ string, amount int64, key string) (model.Transaction, error) {
 
 	tx, err := r.DB.BeginTx(ctx, pgx.TxOptions{})
@@ -299,4 +300,42 @@ func (r *Repository) Transfer(ctx context.Context, id uuid.UUID, typ string, amo
 		return existing, err
 	}
 	return existing, nil
+}
+
+// Balances calculates users balance
+func (r *Repository) Balances(ctx context.Context, id uuid.UUID) (model.UserBalances, error) {
+
+	balances := model.UserBalances{
+		UserID:   id,
+		Balances: []model.Balance{},
+	}
+
+	rows, err := r.DB.Query(ctx, `SELECT exchange.id, exchange.name, account.balance::text 
+			FROM accounts account JOIN exchanges exchange ON exchange.id=account.exchange_id 
+			WHERE account.user_id=$1 AND account.balance>0 ORDER BY exchange.name`, id)
+
+	if err != nil {
+		return balances, err
+	}
+	defer rows.Close()
+
+	var totalCents int64
+	for rows.Next() {
+		var balance model.Balance
+		var amount string
+
+		if err = rows.Scan(&balance.ExchangeID, &balance.ExchangeName, &amount); err != nil {
+			return balances, err
+		}
+		centAmount, err := tocent(amount)
+
+		if err != nil {
+			return balances, err
+		}
+		balance.Amount = float64(centAmount) / 100
+		totalCents += centAmount
+		balances.Balances = append(balances.Balances, balance)
+	}
+	balances.TotalBalance = float64(totalCents) / 100
+	return balances, rows.Err()
 }
