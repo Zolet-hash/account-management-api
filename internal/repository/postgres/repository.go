@@ -1,13 +1,16 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
+	"uuid"
 
 	"github.com/Zolet-hash/account-management-api/internal/domain"
+	"github.com/Zolet-hash/account-management-api/internal/model"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -95,5 +98,24 @@ func mapErr(err error) error {
 		}
 	}
 	return err
+}
+
+// CreateUser inserts user data into the database
+func (r *Repository) CreateUser(ctx context.Context, user model.User) (model.User, error) {
+
+	err := r.DB.QueryRow(ctx, `INSERT INTO users(id, username, date_of_birth, document_number) 
+	VALUES($1,$2,$3,$4) RETURNING created_at`, user.ID, user.Username, user.DateOfBirth, user.DocumentNumber,
+	).Scan(&user.CreatedAt)
+
+	return user, mapErr(err)
+}
+
+func (r *Repository) User(ctx context.Context, id uuid.UUID) (model.User, error) {
+
+	var user model.User
+	err := r.DB.QueryRow(ctx, `SELECT id, username, date_of_birth, document_number,
+								created_at FROM users WHERE id=$1`, id,
+	).Scan(&user.ID, &user.Username, &user.DateOfBirth, &user.DocumentNumber, &user.CreatedAt)
+	return user, mapErr(err)
 }
 
