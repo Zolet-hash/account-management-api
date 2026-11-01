@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"time"
+	"uuid"
 
 	"github.com/Zolet-hash/account-management-api/internal/domain"
 	"github.com/Zolet-hash/account-management-api/internal/service"
@@ -58,26 +59,79 @@ func respondError(c *gin.Context, err error) {
 // context cancelled err
 var contextCanceled = context.Canceled
 
-// User creatin handler
-func (h *Handler) CreateUser(c *gin.Context) {
-	var b struct {
+// User creatin Use handler
+func (handler *Handler) CreateUser(ctx *gin.Context) {
+	var userRequest struct {
 		Username       string `json:"username" binding:"required,max=100"`
 		DateOfBirth    string `json:"dateOfBirth" binding:"required"`
 		DocumentNumber string `json:"documentNumber" binding:"required,max=100"`
 	}
-	if c.ShouldBindJSON(&b) != nil {
-		respondError(c, domain.ErrInvalidRequest)
+	if ctx.ShouldBindJSON(&userRequest) != nil {
+		respondError(ctx, domain.ErrInvalidRequest)
 		return
 	}
-	d, e := time.Parse("2006-01-02", b.DateOfBirth)
-	if e != nil {
-		respondError(c, domain.ErrInvalidRequest)
+	dob, err := time.Parse("2006-01-02", userRequest.DateOfBirth) // go uses 2006-01-02 instead of YYYY-MM-DD
+	if err != nil {
+		respondError(ctx, domain.ErrInvalidRequest)
 		return
 	}
-	u, e := h.s.CreateUser(c.Request.Context(), b.Username, d, b.DocumentNumber)
-	if e != nil {
-		respondError(c, e)
+	user, err := handler.s.CreateUser(ctx.Request.Context(), userRequest.Username, dob, userRequest.DocumentNumber)
+	if err != nil {
+		respondError(ctx, err)
 		return
 	}
-	c.JSON(201, u)
+	ctx.JSON(201, user)
+}
+
+// create account
+func (handler *Handler) CreateAccount(ctx *gin.Context) {
+
+	var account struct {
+		UserID     string `json:"userId" binding:"required,uuid"`
+		ExchangeID string `json:"exchangeId" binding:"required,uuid"`
+	}
+
+	if ctx.ShouldBindJSON(&account) != nil {
+		respondError(ctx, domain.ErrInvalidRequest)
+		return
+	}
+
+	userId, _ := uuid.Parse(account.UserID)
+	exchangeId, _ := uuid.Parse(account.ExchangeID)
+	accountId, err := handler.s.CreateAccount(ctx.Request.Context(), userId, exchangeId)
+
+	if err != nil {
+		respondError(ctx, err)
+		return
+	}
+
+	ctx.JSON(201, accountId)
+}
+
+// transfer
+func (handler *Handler) transfer(typ string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		id, err := uuid.Parse(ctx.Param("accountId"))
+		if err != nil {
+			respondError(ctx, domain.ErrInvalidRequest)
+			return
+		}
+		var amount struct {
+			Amount float64 `json:"amount" binding:"required"`
+		}
+		if ctx.ShouldBindJSON(&amount) != nil {
+			respondError(ctx, domain.ErrInvalidRequest)
+			return
+		}
+		key := ctx.GetHeader("Idempotency-Key")
+		if key == "" {
+			key = ctx.Query("idempotencyKey")
+		}
+		trans, err := handler.s.Transfer(ctx.Request.Context(), id, typ, amount.Amount, key)
+		if err != nil {
+			respondError(ctx, err)
+			return
+		}
+		ctx.JSON(200, trans)
+	}
 }
