@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -26,4 +27,19 @@ func (QueryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.Tr
 			attribute.String("db.system", "postgresql"),
 			attribute.String("db.operation.name", operation)))
 	return ctx
+}
+
+// Records errors and affected rows
+func (QueryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
+
+	span := trace.SpanFromContext(ctx)
+	defer span.End()
+
+	if data.Err != nil {
+		span.SetStatus(codes.Error, "database operation failed")
+	}
+
+	if data.CommandTag.RowsAffected() >= 0 {
+		span.SetAttributes(attribute.Int64("db.rows_affected", data.CommandTag.RowsAffected()))
+	}
 }
