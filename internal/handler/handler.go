@@ -5,7 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"time"
-	"uuid"
+
+	"github.com/google/uuid"
 
 	"github.com/Zolet-hash/account-management-api/internal/domain"
 	"github.com/Zolet-hash/account-management-api/internal/service"
@@ -134,4 +135,42 @@ func (handler *Handler) transfer(typ string) gin.HandlerFunc {
 		}
 		ctx.JSON(200, trans)
 	}
+}
+
+// User balances
+func (handler *Handler) Balances(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("userId"))
+	if err != nil {
+		respondError(ctx, domain.ErrInvalidRequest)
+		return
+	}
+	balance, err := handler.s.Balances(ctx.Request.Context(), id)
+	if err != nil {
+		respondError(ctx, err)
+		return
+	}
+	ctx.JSON(200, balance)
+}
+
+func (h *Handler) Volumes(ctx *gin.Context) {
+	start, e1 := time.Parse("2006-01-02", ctx.Query("startDate"))
+	end, e2 := time.Parse("2006-01-02", ctx.Query("endDate"))
+	if e1 != nil || e2 != nil {
+		respondError(ctx, domain.ErrInvalidRequest)
+		return
+	}
+	volume, err := h.s.Volumes(ctx.Request.Context(), start, end)
+	if err != nil {
+		respondError(ctx, err)
+		return
+	}
+	ctx.JSON(200, volume)
+}
+
+func (h *Handler) TransferDeposit() gin.HandlerFunc {
+	return h.transfer("deposit")
+}
+
+func (h *Handler) TransferWithdrawal() gin.HandlerFunc {
+	return h.transfer("withdrawal")
 }
