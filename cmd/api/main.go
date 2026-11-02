@@ -29,7 +29,7 @@ func main() {
 	}
 }
 
-// run initializes application dependencies, registers routes, 
+// run initializes application dependencies, registers routes,
 // starts the HTTP server, and handles graceful shutdown.
 func run() error {
 	cfg, err := config.Load()
