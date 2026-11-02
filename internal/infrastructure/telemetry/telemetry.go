@@ -1,6 +1,10 @@
 package telemetry
 
 import (
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -100,4 +104,46 @@ func NewMetrics(db *pgxpool.Pool) *Metrics {
 		},
 	)
 	return metrics
+}
+
+// Middleware collects HTTP request, error, latency, and financial transaction metrics for Prometheus
+func (metrics *Metrics) Middleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		route := c.FullPath()
+
+		if route == "" {
+			route = "unmatched"
+		}
+
+		status := http.StatusText(c.Writer.Status())
+		metrics.Requests.WithLabelValues(
+			c.Request.Method,
+			route,
+			status,
+		).Inc()
+
+		metrics.Duration.WithLabelValues(
+			c.Request.Method,
+			route,
+		).Observe(time.Since(start).Seconds())
+
+		if c.Writer.Status() >= 400 {
+			metrics.Errors.WithLabelValues(route, status).Inc()
+		}
+
+		if route == "/api/v1/accounts/:accountId/deposit" || route == "/api/v1/accounts/:accountId/withdrawal" {
+			typ := "deposit"
+			if route == "/api/v1/accounts/:accountId/withdrawal" {
+				typ = "withdrawal"
+			}
+			result := "success"
+
+			if c.Writer.Status() >= 400 {
+				result = "failure"
+			}
+			metrics.Transfers.WithLabelValues(typ, result).Inc()
+		}
+	}
 }
