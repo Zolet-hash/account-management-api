@@ -22,10 +22,24 @@ func (collector *poolCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collector.desc
 }
 
+// Collect collects postgresql statistics and exposes them as a prometheus metrics
 func (collector *poolCollector) Collect(ch chan<- prometheus.Metric) {
-
+	// get database conn pool statistics
 	stats := collector.pool.Stat()
-	for state, value := range map[string]float64{"total": float64(stats.TotalConns()), "acquired": float64(stats.AcquiredConns()), "idle": float64(stats.IdleConns()), "max": float64(stats.MaxConns())} {
-		ch <- prometheus.MustNewConstMetric(c.desc, prometheus.GaugeValue, value, state)
+
+	for state, value := range map[string]float64{
+		"total":    float64(stats.TotalConns()),
+		"acquired": float64(stats.AcquiredConns()),
+		"idle":     float64(stats.IdleConns()),
+		"max":      float64(stats.MaxConns()),
+	} {
+
+		// send metrics to prometheous
+		ch <- prometheus.MustNewConstMetric(
+			collector.desc, 
+			prometheus.GaugeValue, 
+			value, 
+			state,
+		)
 	}
 }
