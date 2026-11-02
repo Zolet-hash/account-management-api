@@ -1,72 +1,57 @@
 package model
 
-import "time"
+import (
+	"time"
 
-// --- User Models ---
+	"github.com/google/uuid"
+)
 
-// CreateUserRequest is the request body for POST /users
-type CreateUserRequest struct {
+type User struct {
+	ID             uuid.UUID `json:"id"`
 	Username       string    `json:"username"`
 	DateOfBirth    time.Time `json:"dateOfBirth"`
-	DocumentNumber string    `json:"documentNumber"`
+	DocumentNumber string    `json:"-"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
-
-// CreateUserResponse is the 201 response body for POST /users
-type CreateUserResponse struct {
-	UserID string `json:"userId"` // UUID
+type Exchange struct {
+	ID                    uuid.UUID `json:"id"`
+	Name                  string    `json:"name"`
+	MinimumAge            int       `json:"minimumAge"`
+	MaximumTransferCents  int64     `json:"-"`
+	MaximumTransferAmount float64   `json:"maximumTransferAmount"`
 }
-
-// UserBalance is an item in the IndividualBalances list
-type UserBalance struct {
-	ExchangeID string  `json:"exchangeId"`
-	Balance    float64 `json:"balance"`
+type Account struct {
+	ID           uuid.UUID `json:"id"`
+	UserID       uuid.UUID `json:"userId"`
+	ExchangeID   uuid.UUID `json:"exchangeId"`
+	BalanceCents int64     `json:"-"`
+	Balance      float64   `json:"balance"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
-
-// GetUserBalancesResponse is the 200 response body for GET /users/{userId}/balances
-type GetUserBalancesResponse struct {
-	TotalBalance       float64       `json:"totalBalance"`
-	IndividualBalances []UserBalance `json:"individualBalances"`
+type Transaction struct {
+	ID          uuid.UUID `json:"id"`
+	AccountID   uuid.UUID `json:"accountId"`
+	Type        string    `json:"type"`
+	AmountCents int64     `json:"-"`
+	Amount      float64   `json:"amount"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
-
-// --- Account Models ---
-
-// CreateAccountRequest is the request body for POST /accounts
-type CreateAccountRequest struct {
-	UserID     string `json:"userId"` // UUID
-	ExchangeID string `json:"exchangeId"`
+type Balance struct {
+	ExchangeID   uuid.UUID `json:"exchangeId"`
+	ExchangeName string    `json:"exchangeName"`
+	Amount       float64   `json:"amount"`
 }
-
-// CreateAccountResponse is the 201 response body for POST /accounts
-type CreateAccountResponse struct {
-	AccountID string `json:"accountId"` // UUID
+type UserBalances struct {
+	UserID       uuid.UUID `json:"userId"`
+	Balances     []Balance `json:"balances"`
+	TotalBalance float64   `json:"totalBalance"`
 }
-
-// --- Transaction Models ---
-
-// DepositWithdrawalRequest is the request body for deposit/withdrawal endpoints
-type DepositWithdrawalRequest struct {
-	Amount float64 `json:"amount"` // min: 0.01
-}
-
-// TransactionResponse is the 200 response body for deposit/withdrawal endpoints
-type TransactionResponse struct {
-	AccountID  string  `json:"accountId"` // UUID
-	NewBalance float64 `json:"newBalance"`
-}
-
-// ExchangeVolume is an item in the exchangeVolumes list
 type ExchangeVolume struct {
-	ExchangeID  string  `json:"exchangeId"`
-	TotalVolume float64 `json:"totalVolume"`
+	ExchangeID   uuid.UUID `json:"exchangeId"`
+	ExchangeName string    `json:"exchangeName"`
+	Volume       float64   `json:"volume"`
 }
-
-// DailyVolume is an item in the dailyVolumes list
 type DailyVolume struct {
-	Date            time.Time        `json:"date"`
+	Date            string           `json:"date"`
 	ExchangeVolumes []ExchangeVolume `json:"exchangeVolumes"`
-}
-
-// GetTransactionVolumeResponse is the 200 response body for GET /transactions/volume
-type GetTransactionVolumeResponse struct {
-	DailyVolumes []DailyVolume `json:"dailyVolumes"`
 }
