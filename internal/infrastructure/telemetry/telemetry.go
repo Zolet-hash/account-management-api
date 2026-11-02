@@ -36,10 +36,68 @@ func (collector *poolCollector) Collect(ch chan<- prometheus.Metric) {
 
 		// send metrics to prometheous
 		ch <- prometheus.MustNewConstMetric(
-			collector.desc, 
-			prometheus.GaugeValue, 
-			value, 
+			collector.desc,
+			prometheus.GaugeValue,
+			value,
 			state,
 		)
 	}
+}
+
+// NewMetrics initializes & registers application and postgresql conn pool wuth prometheus
+func NewMetrics(db *pgxpool.Pool) *Metrics {
+
+	// tracks total no of HTTP requests handled by the application
+	metrics := &Metrics{
+
+		Requests: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "http_requests_total",
+				Help: "HTTP requests",
+			},
+			[]string{"method", "route", "status"},
+		),
+
+		// tracks total no of HTTP errs
+		Errors: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "http_errors_total",
+				Help: "HTTP errors",
+			},
+			[]string{"route", "status"}),
+
+		// measures how long http methods take to complete
+		Duration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "http_request_duration_seconds",
+				Help:    "HTTP request latency",
+				Buckets: prometheus.DefBuckets,
+			},
+			[]string{"method", "route"}),
+
+		//tracks total number of transactions processed
+		Transfers: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "financial_transactions_total",
+				Help: "Financial transactions",
+			},
+			[]string{"type", "result"})}
+
+	// register all metrics with prometheous
+	prometheus.MustRegister(
+		metrics.Requests,
+		metrics.Errors,
+		metrics.Duration,
+		metrics.Transfers,
+		&poolCollector{
+			pool: db,
+			desc: prometheus.NewDesc(
+				"database_pool_connections",
+				"PostgreSQL pool connections by state",
+				[]string{"state"},
+				nil,
+			),
+		},
+	)
+	return metrics
 }
