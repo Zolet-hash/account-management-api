@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: accounts
+      POSTGRES_USER: account
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U account -d accounts"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  migrate:
+    image: migrate/migrate:v4.18.2
+    volumes: [../migrations:/migrations:ro]
+    command: ["-path=/migrations", "-database", "postgres://account:${POSTGRES_PASSWORD:-local-development-only}@db:5432/accounts?sslmode=disable", "up"]
+    depends_on:
+      db: {condition: service_healthy}
+  api:
+    build: {context: .., dockerfile: deployments/Dockerfile}
+    environment:
+      DATABASE_URL: postgres://account:${POSTGRES_PASSWORD:-local-development-only}@db:5432/accounts?sslmode=disable
+      LISTEN_ADDR: :8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: collector:4318
+    ports: ["8080:8080"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      seed: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  seed:
+    build: {context: .., dockerfile: deployments/Dockerfile}
+    entrypoint: ["seed"]
+    environment:
+      DATABASE_URL: postgres://account:${POSTGRES_PASSWORD:-local-development-only}@db:5432/accounts?sslmode=disable
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.115.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes: [./otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro]
+    ports: ["4318:4318"]
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes: [./prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    ports: ["9090:9090"]
+  grafana:
+    image: grafana/grafana:11.3.0
+    volumes: [./grafana-dashboard.json:/var/lib/grafana/dashboards/account-management.json:ro, ./grafana-provisioning.yml:/etc/grafana/provisioning/dashboards/dashboard.yml:ro, ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro]
+    ports: ["3000:3000"]
+volumes:
+  pgdata:

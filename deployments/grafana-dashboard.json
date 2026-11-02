@@ -1,0 +1,83 @@
+{
+  "title": "Account Management API",
+  "uid": "account-management",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP requests/s",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m])) by (route)"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP p95 latency",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le,route))"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Financial transactions/s",
+      "targets": [
+        {
+          "expr": "sum(rate(financial_transactions_total[5m])) by (type,result)"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP errors/s",
+      "targets": [
+        {
+          "expr": "sum(rate(http_errors_total[5m])) by (route)"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "PostgreSQL pool connections",
+      "targets": [
+        {
+          "expr": "database_pool_connections{state=~\"acquired|idle|max\"}"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      }
+    }
+  ]
+}
