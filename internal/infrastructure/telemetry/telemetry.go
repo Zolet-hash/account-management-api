@@ -1,12 +1,20 @@
 package telemetry
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
 // holds different prometheus metrics
@@ -146,4 +154,62 @@ func (metrics *Metrics) Middleware() gin.HandlerFunc {
 			metrics.Transfers.WithLabelValues(typ, result).Inc()
 		}
 	}
+}
+
+// Init Initializes OTEl distributed tracing and exposes prometheus metrics through an HTTP handler
+func Init(ctx context.Context, endpoint string) (func(context.Context) error, error) {
+
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		),
+	)
+
+	if endpoint == "" {
+		otel.SetTracerProvider(
+			sdktrace.NewTracerProvider(
+				sdktrace.WithResource(
+					resource.NewWithAttributes(
+						semconv.SchemaURL,
+						semconv.ServiceName("account-management"),
+					),
+				),
+			),
+		)
+		return func(context.Context) error {
+			return nil
+		}, nil
+	}
+
+	// an endpoint was provided
+	exp, err := otlptracehttp.New(
+		ctx,
+		otlptracehttp.WithEndpoint(endpoint),
+		otlptracehttp.WithInsecure(),
+	)
+
+	// handle exporter initialization error
+	if err != nil {
+		return nil, err
+	}
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(
+			resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceName("account-management"),
+			),
+		),
+	)
+
+	//register the tracer provider globaly
+	otel.SetTracerProvider(tracerProvider)
+
+	return tracerProvider.Shutdown, nil
+}
+
+// exposes prometheus metrics through a http handler
+func Handler() http.Handler {
+	return promhttp.Handler()
 }
