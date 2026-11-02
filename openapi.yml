@@ -1,0 +1,63 @@
+openapi: 3.1.0
+info:
+  title: Account Management API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /users:
+    post:
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, dateOfBirth, documentNumber]
+              properties:
+                username: {type: string}
+                dateOfBirth: {type: string, format: date}
+                documentNumber: {type: string}
+      responses:
+        '201': {description: Created}
+        '400': {description: Invalid request}
+        '409': {description: Conflict}
+  /accounts:
+    post:
+      summary: Open account for an exchange
+      responses:
+        '201': {description: Created}
+        '422': {description: Minimum age not met}
+  /accounts/{accountId}/deposit:
+    post:
+      summary: Deposit
+      parameters:
+        - {in: path, name: accountId, required: true, schema: {type: string, format: uuid}}
+        - {in: header, name: Idempotency-Key, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Transaction recorded}
+  /accounts/{accountId}/withdrawal:
+    post:
+      summary: Withdraw
+      parameters:
+        - {in: path, name: accountId, required: true, schema: {type: string, format: uuid}}
+        - {in: header, name: Idempotency-Key, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Transaction recorded}
+        '422': {description: Insufficient balance or transfer limit exceeded}
+  /users/{userId}/balances:
+    get:
+      summary: Get positive balances by exchange
+      parameters:
+        - {in: path, name: userId, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Balances}
+  /transactions/volume:
+    get:
+      summary: Get daily gross volume
+      parameters:
+        - {in: query, name: startDate, required: true, schema: {type: string, format: date}}
+        - {in: query, name: endDate, required: true, schema: {type: string, format: date}}
+      responses:
+        '200': {description: Daily exchange volume}
