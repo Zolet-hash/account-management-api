@@ -21,3 +21,4 @@ compose-down:
 	docker compose -f deployments/docker-compose.yml down
 load:
 	k6 run tests/load/transactions.js
+
